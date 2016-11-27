@@ -8,7 +8,7 @@ No dependencies on external libraries are required. All required libraries are a
 
 All of these are available on my Github account.
 
-* rpiio
+* rpiio - https://github.com/zipplet/rpiio
 
 ## Supported displays and the driver to use for them
 
