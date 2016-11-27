@@ -1,10 +1,28 @@
 { --------------------------------------------------------------------------
-  Raspberry Pi I2C HD44780 LCD library
-  Requires the the rpiio library.
+  Raspberry Pi LCD driver for:
+    - HD44780 LCD display variants sitting behind a PCF8574 IO expander
+
+  Requires the the rpiio library - https://github.com/zipplet/rpiio
 
   Designed for use with LCDs based on the PCF8574 IO expander, which may or
   may not have working backlight control via a transistor.
   This is also designed for 5x8 dot displays only currently.
+  
+  The PCF8574 IO expander is connected to the HD44780 as follows:
+  
+  PCF8574 D0 --> HD44780 RS (high = command, low = data)
+  PCF8574 D1 --> HD44780 R/W (high = read, low = write)
+  PCF8574 D2 --> HD44780 E (high = latch, low = process)
+  PCF8574 D3 --> Backlight transistor on most modules (high = on, low = off)*
+  PCF8574 D4 --> HD44780 DB0
+  PCF8574 D5 --> HD44780 DB1
+  PCF8574 D6 --> HD44780 DB2
+  PCF8574 D7 --> HD44780 DB3
+  
+  The display is driven in 4-bit mode.
+  
+  *: There is usually a jumper pin on the back of modules that have a
+     backlight transistor. This must be in place to turn on the backlight.
 
   Copyright (c) Michael Nixon 2016.
   Distributed under the MIT license, please see the LICENSE file.
@@ -21,7 +39,8 @@ const
     and there are 2 variants of the chip (PCF8574 and PCF8574A). The constants
     below are supplied for both chip variants. DEFAULT is with all the address
     lines pulled HIGH. Pick the constant for the chip variant you have, and the
-    A0/A1/A2 pads you have shorted together. }
+    A0/A1/A2 pads you have shorted together. These are for NXP chips; other
+    brands may use other addresses! }
     
   HDLCD_PCF8574_ADDR_DEFAULT = $27;
   HDLCD_PCF8574_ADDR_A0 = $26;
@@ -41,7 +60,7 @@ const
   HDLCD_PCF8574A_ADDR_A1A2 = $39;
   HDLCD_PCF8574A_ADDR_A0A1A2 = $38;
 
-  { HD44780 commands }
+  { HD44780 general commands }
   HDLCD_CLEARDISPLAY = $01;   { Clear all display contents }
   HDLCD_RETURNHOME = $02;     { Move cursor to 0,0 and reset display shift }
   HDLCD_ENTRYMODESET = $04;   { Sets cursor movement direction and display shift mode }
@@ -51,13 +70,13 @@ const
   HDLCD_SETCGRAMADDR = $40;   { Set CGRAM address }
   HDLCD_SETDDRAMADDR = $80;   { Set DDRAM address }
 
-  { HD44780 flags for display entry mode }
+  { HD44780 flags for HDLCD_ENTRYMODESET }
   HDLCD_ENTRYLEFT = $02;      { Increment DDRAM address when writing or reading }
   HDLCD_ENTRYRIGHT = $00;     { Decrement DDRAM address when writing or reading }
   HDLCD_ENTRYSHIFTON = $01;   { shift display when writing }
   HDLCD_ENTRYSHIFTOFF = $00;  { Do not shift display when writing }
 
-  { HD44780 flags for display on/off control }
+  { HD44780 flags for HDLCD_DISPLAYCONTROL }
   HDLCD_DISPLAYON = $04;                    { Turn the display on }
   HDLCD_DISPLAYOFF = not HDLCD_DISPLAYON;   { Turn the display off }
   HDLCD_CURSORON = $02;                     { Turn the cursor on }
@@ -65,13 +84,13 @@ const
   HDLCD_BLINKON = $01;                      { Cursor will blink }
   HDLCD_BLINKOFF = not HDLCD_BLINKON;       { Cursor will not blink }
 
-  { HD44780 flags for display and cursor shift }
+  { HD44780 flags for HDLCD_CURSORSHIFT }
   HDLCD_DISPLAYMOVE = $08;
   HDLCD_CURSORMOVE = $00;
   HDLCD_MOVELEFT = $00;
   HDLCD_MOVERIGHT = $04;
 
-  { HD44780 function set flags }
+  { HD44780 flags for HDLCD_FUNCTIONSET }
   HDLCD_8BITMODE = $10;       { Use 8 bit mode for communications }
   HDLCD_4BITMODE = $00;       { Use 4 bit mode for communications }
   HDLCD_2LINE = $08;          { 2 line (and 4 line 20x4) displays }
@@ -79,19 +98,21 @@ const
   HDLCD_5x10DOTS = $04;       { 5x10 dot mode (rare) }
   HDLCD_5x8DOTS = $00;        { 5x8 dot mode (most displays use this) }
 
-  HDLCD_CGRAM_LENGTH = 64;    { Size of CGRAM, in bytes }
-
-  { Specific to I2C PCF8574 adaptor boards in 4-bit mode }
+  { Specific to I2C PCF8574 adaptor boards }
   HDLCD_PCF8574_RS = $01;     { Register/data select (set = data) }
   HDLCD_PCF8574_RW = $02;     { Read/write direction (set = read) }
-  HDLCD_PCF8574_EN = $04;     { Enable (strobe) line }
-  HDLCD_PCF8574_BL = $08;     { Backlight enable (set = on ) }
+  HDLCD_PCF8574_EN = $04;     { Latch data (set = latch) }
+  HDLCD_PCF8574_BL = $08;     { Backlight transistor (set = on ) }
+
+  { Others }
+  HDLCD_CGRAM_LENGTH = 64;    { Size of CGRAM, in bytes }
 
 type
   { Types of HD44780 displays supported }
   eHD44780LCDType = (eHD44780_2LINE16COL, eHD44780_4LINE20COL);
 
-  { HD44780 LCD driver for displays sitting behind an I2C PCF8574 based driver }
+  { HD44780 LCD driver for displays sitting behind an I2C PCF8574 IO expander
+    wired in the manner described at the beginning of this unit }
   tHD44780LCDI2C = class(tobject)
     private
       i2cHandle: cint;                                { I2C device handle }
@@ -132,7 +153,7 @@ type
 implementation
 
 const
-  HDLCD_EXCEPTION_NOHANDLE = 'tHD44780LCDI2C driver: No display handle set';
+  HDLCD_EXCEPTION_NOHANDLE = 'tHD44780LCDI2C driver: I2C device handle not set or invalid';
   HDLCD_EXCEPTION_ACCESS = 'tHD44780LCDI2C driver: Unable to access I2C device';
 
 { --------------------------------------------------------------------------
@@ -141,6 +162,8 @@ const
 { --------------------------------------------------------------------------
   Write to the displays CGRAM, starting at <start>, and write <length>
   bytes. Copies them from self.cgRAM.
+
+  No error handling; passes exceptions up the chain.
   -------------------------------------------------------------------------- }
 procedure tHD44780LCDI2C.writeCGRAM(start, length: longint);
 var
@@ -215,6 +238,7 @@ end;
              LCD elements, but I only have clone chip modules.
 
   NOTE: Does not affect the backlight control on supported display modules.
+
   Returns TRUE on success, FALSE on failure.
   -------------------------------------------------------------------------- }
 function tHD44780LCDI2C.setDisplay(displayOn: boolean): boolean;
@@ -237,9 +261,10 @@ begin
 end;
 
 { --------------------------------------------------------------------------
-  Set the cursor state
+  Set the cursor state.
   <enabled>: True to show the cursor
   <blinking>: True to make the cursor blink
+
   Returns TRUE on success, FALSE on failure.
   -------------------------------------------------------------------------- }
 function tHD44780LCDI2C.SetCursor(enabled: boolean; blinking: boolean): boolean;
@@ -267,7 +292,8 @@ begin
 end;
 
 { --------------------------------------------------------------------------
-  Move the cursor to position X, Y on the LCD display.
+  Move the cursor to position X, Y on the LCD display. Offsets are 0 based.
+
   Returns TRUE on success, FALSE on failure.
   -------------------------------------------------------------------------- }
 function tHD44780LCDI2C.setPos(x, y: longint): boolean;
@@ -294,6 +320,7 @@ end;
 
 { --------------------------------------------------------------------------
   Write a string at the current location.
+
   Returns TRUE on success, FALSE on failure.
   -------------------------------------------------------------------------- }
 function tHD44780LCDI2C.writeString(s: ansistring): boolean;
@@ -316,7 +343,8 @@ end;
 
 { --------------------------------------------------------------------------
   Write the string <s> at line <lineNumber>.
-  Lines are numbered from 0 to the display height.
+  Line offsets begin at 0.
+
   Returns TRUE on success, FALSE on failure.
   -------------------------------------------------------------------------- }
 function tHD44780LCDI2C.writeStringAtLine(s: ansistring; lineNumber: longint): boolean;
@@ -335,6 +363,7 @@ end;
 
 { --------------------------------------------------------------------------
   Set the backlight state. TRUE = on, FALSE = off.
+
   Returns TRUE on success, FALSE on failure.
   -------------------------------------------------------------------------- }
 function tHD44780LCDI2C.setBacklight(backlight: boolean): boolean;
@@ -361,6 +390,7 @@ end;
 
 { --------------------------------------------------------------------------
   Clear the display and reset the cursor to the home position.
+
   Returns TRUE on success, FALSE on failure.
   -------------------------------------------------------------------------- }
 function tHD44780LCDI2C.clearDisplay: boolean;
@@ -387,17 +417,18 @@ end;
 { --------------------------------------------------------------------------
   Write 8 bits of data to the LCD (with the backlight flag) as 4 bits.
   <rs> should be 0 or set to HDLCD_PCF8574_RS for data (instead of command)
+
   Raises an exception on failure.
   -------------------------------------------------------------------------- }
 procedure tHD44780LCDI2C.write8BitsAs4Bits(val: byte; rs: byte);
 var
   byte1, byte2, flags: byte;
 begin
-  flags := rs or self.backlightState;
   if self.i2cHandle < 1 then begin
     raise exception.create(HDLCD_EXCEPTION_NOHANDLE);
   end;
 
+  flags := rs or self.backlightState;
   byte1 := (val and $F0) or flags;
   byte2 := ((val shl 4) and $F0) or flags;
 
@@ -406,7 +437,8 @@ begin
 end;
 
 { --------------------------------------------------------------------------
-  Actually write <val> to the display, toggling the strobe line.
+  Write <val> to the display, toggling the strobe line.
+
   Raises an exception on failure.
   -------------------------------------------------------------------------- }
 procedure tHD44780LCDI2C.strobeData(val: byte);
@@ -420,7 +452,7 @@ begin
     - Pull up EN to latch the data for a small delay (we do not need to wait
       for 1ms, but that is the best we can do without using high performance
       timing and eating CPU, and we do not need to write much data so it does
-      not metter)
+      not matter)
     - Pull down EN to finish the transfer, and wait for for the display to
       finish processing the command. 1ms is enough time to finish almost any
       command with exceptions, which are dealt with in other methods }
@@ -448,6 +480,7 @@ end;
 
 { --------------------------------------------------------------------------
   Write a command to the LCD.
+
   Raises an exception on failure.
   -------------------------------------------------------------------------- }
 procedure tHD44780LCDI2C.writeCommand(command: byte);
@@ -460,6 +493,7 @@ end;
 
 { --------------------------------------------------------------------------
   Write data to the LCD.
+
   Raises an exception on failure.
   -------------------------------------------------------------------------- }
 procedure tHD44780LCDI2C.writeData(val: byte);
@@ -472,13 +506,15 @@ end;
 
 { --------------------------------------------------------------------------
   Initialise the display, with the backlight set to a default state.
+
   Returns TRUE on success, FALSE on failure.
   -------------------------------------------------------------------------- }
 function tHD44780LCDI2C.InitialiseDisplay(backlight: boolean; dispType: eHD44780LCDType): boolean;
 begin
   try
     { Set the initial backlight state, so we don't turn it on by accident
-      during initialisation if this is unwanted }
+      during initialisation if this is unwanted. However all of the displays
+      I have tested start with the backlight turned on anyway. }
     if backlight then begin
       self.backlightState := HDLCD_PCF8574_BL;
     end else begin
@@ -503,7 +539,7 @@ begin
         self.lineOffset[3] := $54;
       end;
     else
-      { Unsupported display type }
+      { Unsupported display type (for now, I plan to add more if I can get them) }
       result := false;
       exit;
     end;
@@ -512,13 +548,14 @@ begin
       this internal reset fails, so this is recommended (see datasheet) }
 
     { First wait 15ms. By the time this code is executing this should have
-      already been met, but it does not hurt. }
+      already been met as the display was probably connected at poweron,
+      but it does not hurt. }
     sleep(15);
     self.writeCommand($03);
     sleep(5);
     self.writeCommand($03);
     { No sleep needed here as the built in command latching sleep is enough,
-      but the datasheet says 100 microseconds }
+      but the datasheet says 100 microseconds. }
     self.writeCommand($03);
     self.writeCommand($02);
 
@@ -526,7 +563,8 @@ begin
       that may require it. }
     sleep(64);
 
-    { Now initialise it }
+    { Now the display is "awake" we can initialise it }
+    
     { 2 line mode is required even for 4 line displays, as they are really just
       2 line displays with the 2 lines split in half. The common I2C interface
       board always uses 4-bit mode with other bits on the PCF8574 used for other
