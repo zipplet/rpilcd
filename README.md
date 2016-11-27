@@ -15,8 +15,8 @@ All of these are available on my Github account.
 * HD44780 character LCDs behind the I2C PCF8574(A) IO expander IC
   * Driver:  __rpii2clcdhd44780__
     * __Demo video:__ https://youtu.be/XQv7JDUyKzE
-    * Usually these displays have backlight control. Leave the backlight jumper on the "backpack" module and the library can control it.
-    * If you cannot see anything and the backlight is on, you probably need to adjust a trimpot on the "backpack" module.
+    * The display might have backlight control. Leave the backlight jumper on the interface module and the library can control it.
+    * If you cannot see anything and the backlight is on, you probably need to adjust a trimpot on the backpack module. Adjust it once the display has been initialised for best results, as it is not driving the segments properly until that time.
     * __20x4__ displays have been fully tested.
     * __16x2__ displays should work, and will be tested soon.
     * The other 2 common sizes I know of (__8x1__ and __40x2__) I cannot get hold of so I cannot test or add support. Please contact me if you wish to donate a module, or add support and send me a pull request.
