@@ -12,7 +12,7 @@ All of these are available on my Github account.
 
 ## Supported displays and the driver to use for them
 
-* HD44780 based character LCDs using the I2C PCF8574(A) chip (very common)
+* HD44780 character LCDs behind the I2C PCF8574(A) IO expander IC
   * Driver:  __rpii2clcdhd44780__
     * __Demo video:__ https://youtu.be/XQv7JDUyKzE
     * Usually these displays have backlight control. Leave the backlight jumper on the "backpack" module and the library can control it.
@@ -23,9 +23,11 @@ All of these are available on my Github account.
 
 ## Upcoming displays
 
-* HD44780 based character LCDs connected directly to GPIO pins, without an I2C or SPI backpack board / interface IC.
+* HD44780 character LCDs connected directly to GPIO pins
   * 4-bit and 8-bit mode will be supported.
   * Driving the backlight via a transistor and PWM for brightness control will be supported.
+  * Supported display sizes will be the same as for the I2C based driver, until I obtain other module sizes.
+* A small OLED module I have yet to identify the driver IC for (I2C based)
 
 ## Directory layout example
 
