@@ -14,6 +14,7 @@ All of these are available on my Github account.
 
 * HD44780 based character LCDs using the I2C PCF8574(A) chip (very common)
   * Driver:  __rpii2clcdhd44780__
+    * __Demo video:__ https://youtu.be/XQv7JDUyKzE
     * Usually these displays have backlight control. Leave the backlight jumper on the "backpack" module and the library can control it.
     * If you cannot see anything and the backlight is on, you probably need to adjust a trimpot on the "backpack" module.
     * __20x4__ displays have been fully tested.
