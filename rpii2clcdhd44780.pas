@@ -528,7 +528,7 @@ begin
         self.displayWidth := 16;
         self.displayHeight := 2;
         self.lineOffset[0] := $00;
-        self.lineOffset[1] := $16;
+        self.lineOffset[1] := $40;
       end;
       eHD44780_4LINE20COL: begin
         self.displayWidth := 20;
