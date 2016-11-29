@@ -13,7 +13,7 @@ All of these are available on my Github account.
 ## Supported displays and the driver to use for them
 
 * HD44780 character LCDs behind the I2C PCF8574(A) IO expander IC
-  * Driver:  __rpii2clcdhd44780__
+  * Driver:  __rpilcdi2chd44780__
     * __Demo video:__ https://youtu.be/XQv7JDUyKzE
     * If there is a jumper for the backlight, leave the jumper on the interface module and the driver can control the backlight via a built in transistor on the module.
     * __20x4__ displays have been fully tested.
