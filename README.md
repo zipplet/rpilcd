@@ -27,7 +27,7 @@ All of these are available on my Github account.
   * 4-bit and 8-bit mode will be supported.
   * Driving the backlight via a transistor and PWM for brightness control will be supported.
   * Supported display sizes will be the same as for the I2C based driver, until I obtain other module sizes.
-* A small OLED module I have yet to identify the driver IC for (I2C based)
+* SSD1306 OLED modules (I2C, 128x64 pixels, monochrome)
 
 ## Directory layout example
 
