@@ -21,13 +21,15 @@ All of these are available on my Github account.
     * __40x2__ displays should work but __have not been tested__
     * The other 3 common sizes I know of (__8x1__, __16x1__ and __40x2__) I cannot get hold of so I cannot test or add support. Please contact me if you wish to donate a module, or add support and send me a pull request.
 
+* SSD1306 I2C OLED 128x64 display - __ALPHA / TESTING ONLY__
+  * Driver: __rpilcdi2cssd1306__
+
 ## Upcoming displays
 
 * HD44780 character LCDs connected directly to GPIO pins
   * 4-bit and 8-bit mode will be supported.
   * Driving the backlight via a transistor and PWM for brightness control will be supported.
   * Supported display sizes will be the same as for the I2C based driver, until I obtain other module sizes.
-* SSD1306 OLED modules (I2C, 128x64 pixels, monochrome)
 
 ## Directory layout example
 
