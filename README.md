@@ -18,6 +18,7 @@ All of these are available on my Github account.
     * If there is a jumper for the backlight, leave the jumper on the interface module and the driver can control the backlight via a built in transistor on the module.
     * __20x4__ displays have been fully tested.
     * __16x2__ displays have been fully tested.
+    * __40x2__ displays should work but __have not been tested__
     * The other 3 common sizes I know of (__8x1__, __16x1__ and __40x2__) I cannot get hold of so I cannot test or add support. Please contact me if you wish to donate a module, or add support and send me a pull request.
 
 ## Upcoming displays
