@@ -27,7 +27,7 @@
   Copyright (c) Michael Nixon 2016.
   Distributed under the MIT license, please see the LICENSE file.
   -------------------------------------------------------------------------- }
-unit rpii2clcdhd44780;
+unit rpilcdi2chd44780;
 
 interface
 
@@ -109,7 +109,9 @@ const
 
 type
   { Types of HD44780 displays supported }
-  eHD44780LCDType = (eHD44780_2LINE16COL, eHD44780_4LINE20COL);
+  eHD44780LCDType = (eHD44780_2LINE16COL,
+                     eHD44780_2LINE40COL,             { Best effort; untested }
+                     eHD44780_4LINE20COL);
 
   { HD44780 LCD driver for displays sitting behind an I2C PCF8574 IO expander
     wired in the manner described at the beginning of this unit }
@@ -153,7 +155,7 @@ type
 implementation
 
 const
-  HDLCD_EXCEPTION_PREFIX = 'rpii2clcdhd44780 driver: ';
+  HDLCD_EXCEPTION_PREFIX = 'rpilcdi2chd44780 driver: ';
   HDLCD_EXCEPTION_NOHANDLE = HDLCD_EXCEPTION_PREFIX + 'I2C device object not set';
   HDLCD_EXCEPTION_ACCESS = HDLCD_EXCEPTION_PREFIX + 'Unable to access I2C device';
   HDLCD_EXCEPTION_BADPOS = HDLCD_EXCEPTION_PREFIX + 'Bad x or y offset';
@@ -490,6 +492,12 @@ begin
   case self.displayType of
     eHD44780_2LINE16COL: begin
       self.displayWidth := 16;
+      self.displayHeight := 2;
+      self.lineOffset[0] := $00;
+      self.lineOffset[1] := $40;
+    end;
+    eHD44780_2LINE40COL: begin
+      self.displayWidth := 40;
       self.displayHeight := 2;
       self.lineOffset[0] := $00;
       self.lineOffset[1] := $40;
