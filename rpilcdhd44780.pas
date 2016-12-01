@@ -92,42 +92,48 @@ type
   { Initial display parameters when initialising the display }
   rHD44780InitParams = record
     lcdType: eHD44780LCDType;
-    useI2C: boolean;
-    I2CAddress: byte;
+    i2cDevice: trpiI2CDevice;
     initialBacklightState: boolean;
     initialDisplayOn: boolean;
+    { Todo: Add flags for non I2C mode, such as pin mappings and 4/8 bit mode }
   end;
 
   { HD44780 LCD driver base class }
   trpilcdHD44780Base = class(tobject)
     private
     protected
-      backlightState: byte;                           { TRUE if the backlight is on }
+      backlightState: byte;                           { Backlight state byte }
       displayType: eHD44780LCDType;                   { Type of display }
       displayWidth: longint;                          { Width of the display in characters }
       displayHeight: longint;                         { Height of the display in characters }
       lineOffset: array[0..3] of byte;                { DDRAM offsets for each line }
       cgRAM: array[0..HDLCD_CGRAM_LENGTH] of byte;    { CGRAM contents for custom characters }
       onOffFlags: byte;                               { Current state of on/off flags }
+      initialised: boolean;                           { True if the display has been initialised }
 
       procedure writeCommand(command: byte); virtual; abstract;
       procedure writeData(val: byte); virtual; abstract;
-      procedure writeCGRAM(start, length: longint); virtual; abstract;
+
+      procedure writeCGRAM(start, length: longint);
     public
-      procedure initialiseDisplay(initialState: rHD44780InitParams); virtual; abstract;
-      procedure clearDisplay; virtual; abstract;
+      constructor Create;
+      destructor Destroy; override;
+
+      procedure initialiseDisplay(initialState: rHD44780InitParams); virtual;
+      procedure clearDisplay;
 
       procedure setBacklight(backlight: boolean); virtual; abstract;
-      procedure setDisplay(displayOn: boolean); virtual; abstract;
-      procedure SetCursor(enabled: boolean; blinking: boolean); virtual; abstract;
+      procedure setDisplay(displayOn: boolean);
+      procedure SetCursor(enabled: boolean; blinking: boolean);
 
-      procedure setPos(x, y: longint); virtual; abstract;
-      procedure writeString(s: ansistring); virtual; abstract;
-      procedure writeStringAtLine(s: ansistring; lineNumber: longint); virtual; abstract;
+      procedure setPos(x, y: longint);
+      procedure writeString(s: ansistring);
+      procedure writeStringAtLine(s: ansistring; lineNumber: longint);
 
-      procedure setCustomChar(charIndex: longint; charData: array of byte); virtual; abstract;
-      procedure setAllCustomChars(charData: array of byte); virtual; abstract;
+      procedure setCustomChar(charIndex: longint; charData: array of byte);
+      procedure setAllCustomChars(charData: array of byte);
   end;
+
 
   { HD44780 LCD driver for displays sitting behind an I2C PCF8574 IO expander
     wired in the manner described at the beginning of this unit }
@@ -135,28 +141,15 @@ type
     private
       i2cDevice: trpiI2CDevice;                       { I2C device object }
     protected
-      procedure write8BitsAs4Bits(val: byte; rs: byte); override;
-      procedure strobeData(val: byte); override;
+      procedure write8BitsAs4Bits(val: byte; rs: byte);
+      procedure strobeData(val: byte);
+
       procedure writeCommand(command: byte); override;
       procedure writeData(val: byte); override;
-      procedure writeCGRAM(start, length: longint); override;
     public
-      constructor Create(i2cDeviceObject: trpiI2CDevice);
-      destructor Destroy; override;
-
       procedure initialiseDisplay(initialState: rHD44780InitParams); override;
-      procedure clearDisplay; override;
 
       procedure setBacklight(backlight: boolean); override;
-      procedure setDisplay(displayOn: boolean); override;
-      procedure SetCursor(enabled: boolean; blinking: boolean); override;
-
-      procedure setPos(x, y: longint); override;
-      procedure writeString(s: ansistring); override;
-      procedure writeStringAtLine(s: ansistring; lineNumber: longint); override;
-
-      procedure setCustomChar(charIndex: longint; charData: array of byte); override;
-      procedure setAllCustomChars(charData: array of byte); override;
   end;
 
 implementation
@@ -164,12 +157,15 @@ implementation
 const
   { Exception messages }
   HD44780_EXCEPTION_PREFIX = 'rpilcdhd44780 driver: ';
-  HD44780_EXCEPTION_NOHANDLE = HD44780_EXCEPTION_PREFIX + 'I2C device object not set';
-  HD44780_EXCEPTION_ACCESS = HD44780_EXCEPTION_PREFIX + 'Unable to access I2C device';
+  HD44780_EXCEPTION_NOHANDLE = HD44780_EXCEPTION_PREFIX + 'Display not initialised';
+  HD44780_EXCEPTION_NOI2CHANDLE = HD44780_EXCEPTION_PREFIX + 'Invalid I2C object handle';
+  HD44780_EXCEPTION_ALREADYINIT = HD44780_EXCEPTION_PREFIX + 'Display already initialised';
+  HD44780_EXCEPTION_ACCESS = HD44780_EXCEPTION_PREFIX + 'Unable to access display';
   HD44780_EXCEPTION_BADPOS = HD44780_EXCEPTION_PREFIX + 'Bad x or y offset';
   HD44780_EXCEPTION_BADDATALEN = HD44780_EXCEPTION_PREFIX + 'Data length invalid';
   HD44780_EXCEPTION_BADCHARINDEX = HD44780_EXCEPTION_PREFIX + 'Bad custom character index';
   HD44780_EXCEPTION_DISPLAYUNSUPPORTED = HD44780_EXCEPTION_PREFIX + 'Unsupported display';
+  HD44780_EXCEPTION_BACKLIGHTNOPIN = HD44780_EXCEPTION_PREFIX + 'Backlight control pin not set';
 
   { HD44780 general commands }
   HD44780_CLEARDISPLAY = $01;   { Clear all display contents }
@@ -222,13 +218,13 @@ const
   Write to the displays CGRAM, starting at <start>, and write <length>
   bytes. Copies them from self.cgRAM.
 
-  No error handling; passes exceptions up the chain.
+  Throws an exception on failure.
   -------------------------------------------------------------------------- }
-procedure tHD44780LCDI2C.writeCGRAM(start, length: longint);
+procedure trpilcdHD44780Base.writeCGRAM(start, length: longint);
 var
   i: longint;
 begin
-  self.writeCommand(HDLCD_SETCGRAMADDR or start);
+  self.writeCommand(HD44780_SETCGRAMADDR or start);
   for i := start to start + (length - 1) do begin
     self.writeData(self.cgRAM[i]);
   end;
@@ -246,10 +242,13 @@ end;
 
   Throws an exception on failure.
   -------------------------------------------------------------------------- }
-procedure tHD44780LCDI2C.setCustomChar(charIndex: longint; charData: array of byte);
+procedure trpilcdHD44780Base.setCustomChar(charIndex: longint; charData: array of byte);
 begin
+  if not self.initialised then begin
+    raise exception.create(HD44780_EXCEPTION_NOHANDLE);
+  end;
   if (length(charData) <> 8) or (charIndex < 0) or (charIndex > 7) then begin
-    raise exception.create(HDLCD_EXCEPTION_BADCHARINDEX);
+    raise exception.create(HD44780_EXCEPTION_BADCHARINDEX);
   end;
   move(charData[0], self.cgRAM[charIndex shl 3], 8);
   self.writeCGRAM(charindex shl 3, 8);
@@ -266,13 +265,16 @@ end;
 
   Throws an exception on failure.
   -------------------------------------------------------------------------- }
-procedure tHD44780LCDI2C.setAllCustomChars(charData: array of byte);
+procedure trpilcdHD44780Base.setAllCustomChars(charData: array of byte);
 begin
-  if length(charData) <> HDLCD_CGRAM_LENGTH then begin
-    raise exception.create(HDLCD_EXCEPTION_BADDATALEN);
+  if not self.initialised then begin
+    raise exception.create(HD44780_EXCEPTION_NOHANDLE);
   end;
-  move(charData[0], self.cgRAM[0], HDLCD_CGRAM_LENGTH);
-  self.writeCGRAM(0, HDLCD_CGRAM_LENGTH);
+  if length(charData) <> HD44780_CGRAM_LENGTH then begin
+    raise exception.create(HD4470_EXCEPTION_BADDATALEN);
+  end;
+  move(charData[0], self.cgRAM[0], HD44780_CGRAM_LENGTH);
+  self.writeCGRAM(0, HD44780_CGRAM_LENGTH);
 end;
 
 { --------------------------------------------------------------------------
@@ -288,17 +290,17 @@ end;
 
   Throws an exception on failure.
   -------------------------------------------------------------------------- }
-procedure tHD44780LCDI2C.setDisplay(displayOn: boolean);
+procedure trpilcdHD44780Base.setDisplay(displayOn: boolean);
 begin
-  if not assigned(self.i2cDevice) then begin
-    raise exception.create(HDLCD_EXCEPTION_NOHANDLE);
+  if not self.initialised then begin
+    raise exception.create(HD44780_EXCEPTION_NOHANDLE);
   end;
   if displayOn then begin
-    self.onOffFlags := self.onOffFlags or HDLCD_DISPLAYON;
+    self.onOffFlags := self.onOffFlags or HD44780_DISPLAYON;
   end else begin
-    self.onOffFlags := self.onOffFlags and HDLCD_DISPLAYOFF;
+    self.onOffFlags := self.onOffFlags and HD44780_DISPLAYOFF;
   end;
-  self.writeCommand(HDLCD_DISPLAYCONTROL or self.onOffFlags);
+  self.writeCommand(HD44780_DISPLAYCONTROL or self.onOffFlags);
 end;
 
 { --------------------------------------------------------------------------
@@ -308,22 +310,22 @@ end;
 
   Throws an exception on failure.
   -------------------------------------------------------------------------- }
-procedure tHD44780LCDI2C.SetCursor(enabled: boolean; blinking: boolean);
+procedure trpilcdHD44780Base.SetCursor(enabled: boolean; blinking: boolean);
 begin
-  if not assigned(self.i2cDevice) then begin
-    raise exception.create(HDLCD_EXCEPTION_NOHANDLE);
+  if not self.initialised then begin
+    raise exception.create(HD44780_EXCEPTION_NOHANDLE);
   end;
   if enabled then begin
-    self.onOffFlags := self.onOffFlags or HDLCD_CURSORON;
+    self.onOffFlags := self.onOffFlags or HD44780_CURSORON;
   end else begin
-    self.onOffFlags := self.onOffFlags and HDLCD_CURSOROFF;
+    self.onOffFlags := self.onOffFlags and HD44780_CURSOROFF;
   end;
   if blinking then begin
-    self.onOffFlags := self.onOffFlags or HDLCD_BLINKON;
+    self.onOffFlags := self.onOffFlags or HD44780_BLINKON;
   end else begin
-    self.onOffFlags := self.onOffFlags and HDLCD_BLINKOFF;
+    self.onOffFlags := self.onOffFlags and HD44780_BLINKOFF;
   end;
-  self.writeCommand(HDLCD_DISPLAYCONTROL or self.onOffFlags);
+  self.writeCommand(HD44780_DISPLAYCONTROL or self.onOffFlags);
 end;
 
 { --------------------------------------------------------------------------
@@ -331,18 +333,18 @@ end;
 
   Throws an exception on failure.
   -------------------------------------------------------------------------- }
-procedure tHD44780LCDI2C.setPos(x, y: longint);
+procedure trpilcdHD44780Base.setPos(x, y: longint);
 begin
-  if not assigned(self.i2cDevice) then begin
-    raise exception.create(HDLCD_EXCEPTION_NOHANDLE);
+  if not self.initialised then begin
+    raise exception.create(HD44780_EXCEPTION_NOHANDLE);
   end;
   if (x < 0) or (x >= self.displayWidth) then begin
-    raise exception.create(HDLCD_EXCEPTION_BADPOS);
+    raise exception.create(HD44780_EXCEPTION_BADPOS);
   end;
   if (y < 0) or (y >= self.displayHeight) then begin
-    raise exception.create(HDLCD_EXCEPTION_BADPOS);
+    raise exception.create(HD44780_EXCEPTION_BADPOS);
   end;
-  self.writeCommand(HDLCD_SETDDRAMADDR or (self.lineOffset[y] + x));
+  self.writeCommand(HD44780_SETDDRAMADDR or (self.lineOffset[y] + x));
 end;
 
 { --------------------------------------------------------------------------
@@ -350,12 +352,12 @@ end;
 
   Throws an exception on failure.
   -------------------------------------------------------------------------- }
-procedure tHD44780LCDI2C.writeString(s: ansistring);
+procedure trpilcdHD44780Base.writeString(s: ansistring);
 var
   i: longint;
 begin
-  if not assigned(self.i2cDevice) then begin
-    raise exception.create(HDLCD_EXCEPTION_NOHANDLE);
+  if not self.initialised then begin
+    raise exception.create(HD44780_EXCEPTION_NOHANDLE);
   end;
   for i := 1 to length(s) do begin
     self.writeData(ord(s[i]));
@@ -368,10 +370,10 @@ end;
 
   Throws an exception on failure.
   -------------------------------------------------------------------------- }
-procedure tHD44780LCDI2C.writeStringAtLine(s: ansistring; lineNumber: longint);
+procedure trpilcdHD44780Base.writeStringAtLine(s: ansistring; lineNumber: longint);
 begin
-  if not assigned(self.i2cDevice) then begin
-    raise exception.create(HDLCD_EXCEPTION_NOHANDLE);
+  if not self.initialised then begin
+    raise exception.create(HD44780_EXCEPTION_NOHANDLE);
   end;
   self.setPos(0, lineNumber);
   self.writeString(s);
@@ -382,14 +384,14 @@ end;
 
   Throws an exception on failure.
   -------------------------------------------------------------------------- }
-procedure tHD44780LCDI2C.setBacklight(backlight: boolean);
+procedure trpilcdHD44780I2C.setBacklight(backlight: boolean);
 begin
-  if not assigned(self.i2cDevice) then begin
-    raise exception.create(HDLCD_EXCEPTION_NOHANDLE);
+  if not self.initialised then begin
+    raise exception.create(HD44780_EXCEPTION_NOHANDLE);
   end;
 
   if backlight then begin
-    self.backlightState := HDLCD_PCF8574_BL;
+    self.backlightState := HD44780_PCF8574_BL;
   end else begin
     self.backlightState := 0;
   end;
@@ -399,7 +401,7 @@ begin
     self.i2cDevice.writeByte(self.backlightState);
   except
     on e: exception do begin
-      raise exception.create(HDLCD_EXCEPTION_ACCESS + ': ' + e.message);
+      raise exception.create(HD44780_EXCEPTION_ACCESS + ': ' + e.message);
     end;
   end;
 end;
@@ -409,34 +411,34 @@ end;
 
   Throws an exception on failure.
   -------------------------------------------------------------------------- }
-procedure tHD44780LCDI2C.clearDisplay;
+procedure trpilcdHD44780Base.clearDisplay;
 begin
-  if not assigned(self.i2cDevice) then begin
-    raise exception.create(HDLCD_EXCEPTION_NOHANDLE);
+  if not self.initialised then begin
+    raise exception.create(HD44780_EXCEPTION_NOHANDLE);
   end;
 
-  self.writeCommand(HDLCD_CLEARDISPLAY);
+  self.writeCommand(HD44780_CLEARDISPLAY);
   { The datasheet does not define an execution time for CLEARDISPLAY.
     We will be safe and assume 10ms extra }
   sleep(10);
 
-  self.writeCommand(HDLCD_RETURNHOME);
+  self.writeCommand(HD44780_RETURNHOME);
   { Extra time should be given for RETURNHOME, as per datasheet }
   sleep(2);
 end;
 
 { --------------------------------------------------------------------------
   Write 8 bits of data to the LCD (with the backlight flag) as 4 bits.
-  <rs> should be 0 or set to HDLCD_PCF8574_RS for data (instead of command)
+  <rs> should be 0 or set to HD44780_PCF8574_RS for data (instead of command)
 
   Throws an exception on failure.
   -------------------------------------------------------------------------- }
-procedure tHD44780LCDI2C.write8BitsAs4Bits(val: byte; rs: byte);
+procedure trpilcdHD44780I2C.write8BitsAs4Bits(val: byte; rs: byte);
 var
   byte1, byte2, flags: byte;
 begin
-  if not assigned(self.i2cDevice) then begin
-    raise exception.create(HDLCD_EXCEPTION_NOHANDLE);
+  if not self.initialised then begin
+    raise exception.create(HD44780_EXCEPTION_NOHANDLE);
   end;
 
   flags := rs or self.backlightState;
@@ -452,10 +454,10 @@ end;
 
   Throws an exception on failure.
   -------------------------------------------------------------------------- }
-procedure tHD44780LCDI2C.strobeData(val: byte);
+procedure trpilcdHD44780I2C.strobeData(val: byte);
 begin
-  if not assigned(self.i2cDevice) then begin
-    raise exception.create(HDLCD_EXCEPTION_NOHANDLE);
+  if not self.initialised then begin
+    raise exception.create(HD44780_EXCEPTION_NOHANDLE);
   end;
 
   { For each write, we must do the following:
@@ -473,7 +475,7 @@ begin
     self.i2cDevice.writeByte(val);
 
     { No delay needed here, by now the data is there. Tell the display to latch }
-    self.i2cDevice.writeByte(val or HDLCD_PCF8574_EN);
+    self.i2cDevice.writeByte(val or HD44780_PCF8574_EN);
 
     { Give the display some time to latch. As mentioned earlier, this could be
       replaced with a much smaller time delay. }
@@ -486,7 +488,7 @@ begin
     sleep(1);
   except
     on e: exception do begin
-      raise exception.create(HDLCD_EXCEPTION_ACCESS + ': ' + e.message);
+      raise exception.create(HD44780_EXCEPTION_ACCESS + ': ' + e.message);
     end;
   end;
 end;
@@ -496,10 +498,10 @@ end;
 
   Throws an exception on failure.
   -------------------------------------------------------------------------- }
-procedure tHD44780LCDI2C.writeCommand(command: byte);
+procedure trpilcdHD44780I2C.writeCommand(command: byte);
 begin
-  if not assigned(self.i2cDevice) then begin
-    raise exception.create(HDLCD_EXCEPTION_NOHANDLE);
+  if not self.initialised then begin
+    raise exception.create(HD44780_EXCEPTION_NOHANDLE);
   end;
 
   self.write8BitsAs4Bits(command, 0);
@@ -510,13 +512,33 @@ end;
 
   Throws an exception on failure.
   -------------------------------------------------------------------------- }
-procedure tHD44780LCDI2C.writeData(val: byte);
+procedure trpilcdHD44780I2C.writeData(val: byte);
 begin
-  if not assigned(self.i2cDevice) then begin
-    raise exception.create(HDLCD_EXCEPTION_NOHANDLE);
+  if not self.initialised then begin
+    raise exception.create(HD44780_EXCEPTION_NOHANDLE);
   end;
 
-  self.write8BitsAs4Bits(val, HDLCD_PCF8574_RS);
+  self.write8BitsAs4Bits(val, HD44780_PCF8574_RS);
+end;
+
+{ --------------------------------------------------------------------------
+  Extra code needed for I2C initialisation.
+
+  Throws an exception on failure.
+  -------------------------------------------------------------------------- }
+procedure trpilcdHD44780I2C.initialiseDisplay(initialState: rHD44780InitParams);
+begin
+  { Not a duplicate check; without this the user could be naughty and call
+    this to change the I2C device }
+  if self.initialised then begin
+    raise exception.create(HD44780_EXCEPTION_ALREADYINIT);
+  end;
+  if not assigned(initialState.i2cDevice) then begin
+    raise exception.create(HD44780_EXCEPTION_NOI2CHANDLE);
+  end;
+  self.i2cDevice := initialState.i2cDevice;
+
+  inherited initialDisplay(initialState);
 end;
 
 { --------------------------------------------------------------------------
@@ -524,22 +546,23 @@ end;
 
   Throws an exception on failure.
   -------------------------------------------------------------------------- }
-procedure tHD44780LCDI2C.InitialiseDisplay(backlight: boolean; dispType: eHD44780LCDType);
+procedure trpilcdHD44780Base.initialiseDisplay(initialState: rHD44780InitParams);
 begin
-  if not assigned(self.i2cDevice) then begin
-    raise exception.create(HDLCD_EXCEPTION_NOHANDLE);
+  if self.initialised then begin
+    raise exception.create(HD44780_EXCEPTION_ALREADYINIT);
   end;
 
   { Set the initial backlight state, so we don't turn it on by accident
     during initialisation if this is unwanted. However all of the displays
     I have tested start with the backlight turned on anyway. }
-  if backlight then begin
-    self.backlightState := HDLCD_PCF8574_BL;
+  if initialState.backlightState then begin
+    { Yes, this is the I2C constant but that's OK }
+    self.backlightState := HD44780_PCF8574_BL;
   end else begin
     self.backlightState := 0;
   end;
 
-  self.displayType := dispType;
+  self.displayType := initialState.lcdType;
 
   case self.displayType of
     eHD44780_2LINE16COL: begin
@@ -564,7 +587,7 @@ begin
     end;
   else
     { Unsupported display type (for now, I plan to add more if I can get them) }
-    raise exception.create(HDLCD_EXCEPTION_DISPLAYUNSUPPORTED);
+    raise exception.create(HD44780_EXCEPTION_DISPLAYUNSUPPORTED);
   end;
 
   { Reset the LCD (wake up). It has an internal reset, but if VCC is too low
@@ -593,7 +616,10 @@ begin
     board always uses 4-bit mode with other bits on the PCF8574 used for other
     purposes such as backlight control }
 
-  self.onOffFlags := HDLCD_DISPLAYON;
+  self.onOffFlags := $00;
+  if initialState.displayOn then begin
+    self.onOffFlags := self.onOffFlags or HD44780_DISPLAYON;
+  end;
   self.writeCommand(HDLCD_FUNCTIONSET or HDLCD_2LINE or HDLCD_5x8DOTS or HDLCD_4BITMODE);
   self.writeCommand(HDLCD_DISPLAYCONTROL or self.onOffFlags);
   self.writeCommand(HDLCD_ENTRYMODESET or HDLCD_ENTRYLEFT);
@@ -601,22 +627,22 @@ begin
   { Moved the CLEARDISPLAY command - now just call our own function that
     also makes sure the cursor and shift are in a sane position }
   self.clearDisplay;
+
 end;
 
 { --------------------------------------------------------------------------
   Class constructor
   -------------------------------------------------------------------------- }
-constructor tHD44780LCDI2C.Create(i2cDeviceObject: trpiI2CDevice);
+constructor trpilcdHD44780Base.Create;
 begin
   inherited Create;
-  self.i2cDevice := i2cDeviceObject;
   fillbyte(self.cgRAM[0], HDLCD_CGRAM_LENGTH, 0);
 end;
 
 { --------------------------------------------------------------------------
   Class destructor
   -------------------------------------------------------------------------- }
-destructor tHD44780LCDI2C.Destroy;
+destructor trpilcdHD44780Base.Destroy;
 begin
   {}
   inherited Destroy;
