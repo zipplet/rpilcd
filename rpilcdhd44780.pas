@@ -1,8 +1,17 @@
 { --------------------------------------------------------------------------
   Raspberry Pi LCD driver for:
-    - HD44780 LCD display variants sitting behind a PCF8574 IO expander
+    - HD44780 LCD display variants
 
   Requires the the rpiio library - https://github.com/zipplet/rpiio
+
+  Supported display sizes / types:
+
+    - 20x4 - fully tested
+    - 16x2 - fully tested
+    - 40x2 - untested, should work
+
+
+  I2C displays:
 
   Designed for use with LCDs based on the PCF8574 IO expander, which may or
   may not have working backlight control via a transistor.
@@ -24,10 +33,21 @@
   *: There is usually a jumper pin on the back of modules that have a
      backlight transistor. This must be in place to turn on the backlight.
 
+
+  Directly connected displays:
+
+  TODO
+
+
+  rpilcd daemon:
+
+  TODO
+
+
   Copyright (c) Michael Nixon 2016.
   Distributed under the MIT license, please see the LICENSE file.
   -------------------------------------------------------------------------- }
-unit rpilcdi2chd44780;
+unit rpilcdhd44780;
 
 interface
 
@@ -42,82 +62,46 @@ const
     A0/A1/A2 pads you have shorted together. These are for NXP chips; other
     brands may use other addresses! }
     
-  HDLCD_PCF8574_ADDR_DEFAULT = $27;
-  HDLCD_PCF8574_ADDR_A0 = $26;
-  HDLCD_PCF8574_ADDR_A1 = $25;
-  HDLCD_PCF8574_ADDR_A0A1 = $24;
-  HDLCD_PCF8574_ADDR_A2 = $23;
-  HDLCD_PCF8574_ADDR_A0A2 = $22;
-  HDLCD_PCF8574_ADDR_A1A2 = $21;
-  HDLCD_PCF8574_ADDR_A0A1A2 = $20;
+  PCF8574_ADDR_DEFAULT = $27;
+  PCF8574_ADDR_A0 = $26;
+  PCF8574_ADDR_A1 = $25;
+  PCF8574_ADDR_A0A1 = $24;
+  PCF8574_ADDR_A2 = $23;
+  PCF8574_ADDR_A0A2 = $22;
+  PCF8574_ADDR_A1A2 = $21;
+  PCF8574_ADDR_A0A1A2 = $20;
   
-  HDLCD_PCF8574A_ADDR_DEFAULT = $3F;
-  HDLCD_PCF8574A_ADDR_A0 = $3E;
-  HDLCD_PCF8574A_ADDR_A1 = $3D;
-  HDLCD_PCF8574A_ADDR_A0A1 = $3C;
-  HDLCD_PCF8574A_ADDR_A2 = $3B;
-  HDLCD_PCF8574A_ADDR_A0A2 = $3A;
-  HDLCD_PCF8574A_ADDR_A1A2 = $39;
-  HDLCD_PCF8574A_ADDR_A0A1A2 = $38;
-
-  { HD44780 general commands }
-  HDLCD_CLEARDISPLAY = $01;   { Clear all display contents }
-  HDLCD_RETURNHOME = $02;     { Move cursor to 0,0 and reset display shift }
-  HDLCD_ENTRYMODESET = $04;   { Sets cursor movement direction and display shift mode }
-  HDLCD_DISPLAYCONTROL = $08; { Display on/off, cursor on/off, cursor blink on/off }
-  HDLCD_CURSORSHIFT = $10;    { Move cursor and shift display without changing DDRAM }
-  HDLCD_FUNCTIONSET = $20;    { Set LCD operating mode (bus type etc) }
-  HDLCD_SETCGRAMADDR = $40;   { Set CGRAM address }
-  HDLCD_SETDDRAMADDR = $80;   { Set DDRAM address }
-
-  { HD44780 flags for HDLCD_ENTRYMODESET }
-  HDLCD_ENTRYLEFT = $02;      { Increment DDRAM address when writing or reading }
-  HDLCD_ENTRYRIGHT = $00;     { Decrement DDRAM address when writing or reading }
-  HDLCD_ENTRYSHIFTON = $01;   { shift display when writing }
-  HDLCD_ENTRYSHIFTOFF = $00;  { Do not shift display when writing }
-
-  { HD44780 flags for HDLCD_DISPLAYCONTROL }
-  HDLCD_DISPLAYON = $04;                    { Turn the display on }
-  HDLCD_DISPLAYOFF = not HDLCD_DISPLAYON;   { Turn the display off }
-  HDLCD_CURSORON = $02;                     { Turn the cursor on }
-  HDLCD_CURSOROFF = not HDLCD_CURSORON;     { Turn the cursor off }
-  HDLCD_BLINKON = $01;                      { Cursor will blink }
-  HDLCD_BLINKOFF = not HDLCD_BLINKON;       { Cursor will not blink }
-
-  { HD44780 flags for HDLCD_CURSORSHIFT }
-  HDLCD_DISPLAYMOVE = $08;
-  HDLCD_CURSORMOVE = $00;
-  HDLCD_MOVELEFT = $00;
-  HDLCD_MOVERIGHT = $04;
-
-  { HD44780 flags for HDLCD_FUNCTIONSET }
-  HDLCD_8BITMODE = $10;       { Use 8 bit mode for communications }
-  HDLCD_4BITMODE = $00;       { Use 4 bit mode for communications }
-  HDLCD_2LINE = $08;          { 2 line (and 4 line 20x4) displays }
-  HDLCD_1LINE = $00;          { Single line display (not supported here) }
-  HDLCD_5x10DOTS = $04;       { 5x10 dot mode (rare) }
-  HDLCD_5x8DOTS = $00;        { 5x8 dot mode (most displays use this) }
-
-  { Specific to I2C PCF8574 adaptor boards }
-  HDLCD_PCF8574_RS = $01;     { Register/data select (set = data) }
-  HDLCD_PCF8574_RW = $02;     { Read/write direction (set = read) }
-  HDLCD_PCF8574_EN = $04;     { Latch data (set = latch) }
-  HDLCD_PCF8574_BL = $08;     { Backlight transistor (set = on ) }
+  PCF8574A_ADDR_DEFAULT = $3F;
+  PCF8574A_ADDR_A0 = $3E;
+  PCF8574A_ADDR_A1 = $3D;
+  PCF8574A_ADDR_A0A1 = $3C;
+  PCF8574A_ADDR_A2 = $3B;
+  PCF8574A_ADDR_A0A2 = $3A;
+  PCF8574A_ADDR_A1A2 = $39;
+  PCF8574A_ADDR_A0A1A2 = $38;
 
   { Others }
-  HDLCD_CGRAM_LENGTH = 64;    { Size of CGRAM, in bytes }
+  HD44780_CGRAM_LENGTH = 64;    { Size of CGRAM, in bytes }
 
 type
   { Types of HD44780 displays supported }
   eHD44780LCDType = (eHD44780_2LINE16COL,
-                     eHD44780_2LINE40COL,             { Best effort; untested }
+                     eHD44780_2LINE40COL,
                      eHD44780_4LINE20COL);
 
-  { HD44780 LCD driver for displays sitting behind an I2C PCF8574 IO expander
-    wired in the manner described at the beginning of this unit }
-  tHD44780LCDI2C = class(tobject)
+  { Initial display parameters when initialising the display }
+  rHD44780InitParams = record
+    lcdType: eHD44780LCDType;
+    useI2C: boolean;
+    I2CAddress: byte;
+    initialBacklightState: boolean;
+    initialDisplayOn: boolean;
+  end;
+
+  { HD44780 LCD driver base class }
+  trpilcdHD44780Base = class(tobject)
     private
-      i2cDevice: trpiI2CDevice;                       { I2C device object }
+    protected
       backlightState: byte;                           { TRUE if the backlight is on }
       displayType: eHD44780LCDType;                   { Type of display }
       displayWidth: longint;                          { Width of the display in characters }
@@ -126,42 +110,110 @@ type
       cgRAM: array[0..HDLCD_CGRAM_LENGTH] of byte;    { CGRAM contents for custom characters }
       onOffFlags: byte;                               { Current state of on/off flags }
 
-      { These throw exceptions to make the callers simpler }
-      procedure write8BitsAs4Bits(val: byte; rs: byte);
-      procedure strobeData(val: byte);
-      procedure writeCommand(command: byte);
-      procedure writeData(val: byte);
-      procedure writeCGRAM(start, length: longint);
+      procedure writeCommand(command: byte); virtual; abstract;
+      procedure writeData(val: byte); virtual; abstract;
+      procedure writeCGRAM(start, length: longint); virtual; abstract;
+    public
+      procedure initialiseDisplay(initialState: rHD44780InitParams); virtual; abstract;
+      procedure clearDisplay; virtual; abstract;
+
+      procedure setBacklight(backlight: boolean); virtual; abstract;
+      procedure setDisplay(displayOn: boolean); virtual; abstract;
+      procedure SetCursor(enabled: boolean; blinking: boolean); virtual; abstract;
+
+      procedure setPos(x, y: longint); virtual; abstract;
+      procedure writeString(s: ansistring); virtual; abstract;
+      procedure writeStringAtLine(s: ansistring; lineNumber: longint); virtual; abstract;
+
+      procedure setCustomChar(charIndex: longint; charData: array of byte); virtual; abstract;
+      procedure setAllCustomChars(charData: array of byte); virtual; abstract;
+  end;
+
+  { HD44780 LCD driver for displays sitting behind an I2C PCF8574 IO expander
+    wired in the manner described at the beginning of this unit }
+  trpilcdHD44780I2C = class(trpilcdHD44780Base)
+    private
+      i2cDevice: trpiI2CDevice;                       { I2C device object }
     protected
+      procedure write8BitsAs4Bits(val: byte; rs: byte); override;
+      procedure strobeData(val: byte); override;
+      procedure writeCommand(command: byte); override;
+      procedure writeData(val: byte); override;
+      procedure writeCGRAM(start, length: longint); override;
     public
       constructor Create(i2cDeviceObject: trpiI2CDevice);
       destructor Destroy; override;
 
-      procedure initialiseDisplay(backlight: boolean; dispType: eHD44780LCDType);
-      procedure clearDisplay;
+      procedure initialiseDisplay(initialState: rHD44780InitParams); override;
+      procedure clearDisplay; override;
 
-      procedure setBacklight(backlight: boolean);
-      procedure setDisplay(displayOn: boolean);
-      procedure SetCursor(enabled: boolean; blinking: boolean);
+      procedure setBacklight(backlight: boolean); override;
+      procedure setDisplay(displayOn: boolean); override;
+      procedure SetCursor(enabled: boolean; blinking: boolean); override;
 
-      procedure setPos(x, y: longint);
-      procedure writeString(s: ansistring);
-      procedure writeStringAtLine(s: ansistring; lineNumber: longint);
+      procedure setPos(x, y: longint); override;
+      procedure writeString(s: ansistring); override;
+      procedure writeStringAtLine(s: ansistring; lineNumber: longint); override;
 
-      procedure setCustomChar(charIndex: longint; charData: array of byte);
-      procedure setAllCustomChars(charData: array of byte);
+      procedure setCustomChar(charIndex: longint; charData: array of byte); override;
+      procedure setAllCustomChars(charData: array of byte); override;
   end;
 
 implementation
 
 const
-  HDLCD_EXCEPTION_PREFIX = 'rpilcdi2chd44780 driver: ';
-  HDLCD_EXCEPTION_NOHANDLE = HDLCD_EXCEPTION_PREFIX + 'I2C device object not set';
-  HDLCD_EXCEPTION_ACCESS = HDLCD_EXCEPTION_PREFIX + 'Unable to access I2C device';
-  HDLCD_EXCEPTION_BADPOS = HDLCD_EXCEPTION_PREFIX + 'Bad x or y offset';
-  HDLCD_EXCEPTION_BADDATALEN = HDLCD_EXCEPTION_PREFIX + 'Data length invalid';
-  HDLCD_EXCEPTION_BADCHARINDEX = HDLCD_EXCEPTION_PREFIX + 'Bad custom character index';
-  HDLCD_EXCEPTION_DISPLAYUNSUPPORTED = HDLCD_EXCEPTION_PREFIX + 'Unsupported display';
+  { Exception messages }
+  HD44780_EXCEPTION_PREFIX = 'rpilcdhd44780 driver: ';
+  HD44780_EXCEPTION_NOHANDLE = HD44780_EXCEPTION_PREFIX + 'I2C device object not set';
+  HD44780_EXCEPTION_ACCESS = HD44780_EXCEPTION_PREFIX + 'Unable to access I2C device';
+  HD44780_EXCEPTION_BADPOS = HD44780_EXCEPTION_PREFIX + 'Bad x or y offset';
+  HD44780_EXCEPTION_BADDATALEN = HD44780_EXCEPTION_PREFIX + 'Data length invalid';
+  HD44780_EXCEPTION_BADCHARINDEX = HD44780_EXCEPTION_PREFIX + 'Bad custom character index';
+  HD44780_EXCEPTION_DISPLAYUNSUPPORTED = HD44780_EXCEPTION_PREFIX + 'Unsupported display';
+
+  { HD44780 general commands }
+  HD44780_CLEARDISPLAY = $01;   { Clear all display contents }
+  HD44780_RETURNHOME = $02;     { Move cursor to 0,0 and reset display shift }
+  HD44780_ENTRYMODESET = $04;   { Sets cursor movement direction and display shift mode }
+  HD44780_DISPLAYCONTROL = $08; { Display on/off, cursor on/off, cursor blink on/off }
+  HD44780_CURSORSHIFT = $10;    { Move cursor and shift display without changing DDRAM }
+  HD44780_FUNCTIONSET = $20;    { Set LCD operating mode (bus type etc) }
+  HD44780_SETCGRAMADDR = $40;   { Set CGRAM address }
+  HD44780_SETDDRAMADDR = $80; 	{ Set DDRAM address }
+
+  { Flags for HD44780_ENTRYMODESET }
+  HD44780_ENTRYLEFT = $02;      { Increment DDRAM address when writing or reading }
+  HD44780_ENTRYRIGHT = $00;     { Decrement DDRAM address when writing or reading }
+  HD44780_ENTRYSHIFTON = $01;   { Shift display when writing }
+  HD44780_ENTRYSHIFTOFF = $00;  { Do not shift display when writing }
+
+  { Flags for HD44780_DISPLAYCONTROL }
+  HD44780_DISPLAYON = $04;                    	{ Turn the display on }
+  HD44780_DISPLAYOFF = not HD44780_DISPLAYON;   { Turn the display off }
+  HD44780_CURSORON = $02;                     	{ Turn the cursor on }
+  HD44780_CURSOROFF = not HD44780_CURSORON;     { Turn the cursor off }
+  HD44780_BLINKON = $01;                      	{ The cursor will blink }
+  HD44780_BLINKOFF = not HD44780_BLINKON;       { The cursor will not blink }
+
+  { Flags for HD44780_CURSORSHIFT }
+  HD44780_DISPLAYMOVE = $08;
+  HD44780_CURSORMOVE = $00;
+  HD44780_MOVELEFT = $00;
+  HD44780_MOVERIGHT = $04;
+
+  { Flags for HD44780_FUNCTIONSET }
+  HD44780_8BITMODE = $10;       { Use 8 bit mode for communications }
+  HD44780_4BITMODE = $00;       { Use 4 bit mode for communications }
+  HD44780_2LINE = $08;          { 2 line (and 4 line 20x4) displays }
+  HD44780_1LINE = $00;          { Single line display (not supported here) }
+  HD44780_5x10DOTS = $04;       { 5x10 dot mode (rare) }
+  HD44780_5x8DOTS = $00;        { 5x8 dot mode (most displays use this) }
+
+  { Specific to I2C PCF8574 adaptor boards }
+  HD44780_PCF8574_RS = $01;     { Register/data select (set = data) }
+  HD44780_PCF8574_RW = $02;     { Read/write direction (set = read) }
+  HD44780_PCF8574_EN = $04;     { Latch data (set = latch) }
+  HD44780_PCF8574_BL = $08;     { Backlight transistor (set = on ) }
 
 { --------------------------------------------------------------------------
   -------------------------------------------------------------------------- }
