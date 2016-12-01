@@ -93,7 +93,7 @@ type
   rHD44780InitParams = record
     lcdType: eHD44780LCDType;
     i2cDevice: trpiI2CDevice;
-    backlightState: boolean;
+    backlightOn: boolean;
     displayOn: boolean;
     { Todo: Add flags for non I2C mode, such as pin mappings and 4/8 bit mode }
   end;
@@ -555,7 +555,7 @@ begin
   { Set the initial backlight state, so we don't turn it on by accident
     during initialisation if this is unwanted. However all of the displays
     I have tested start with the backlight turned on anyway. }
-  if initialState.backlightState then begin
+  if initialState.backlightOn then begin
     { Yes, this is the I2C constant but that's OK }
     self.backlightState := HD44780_PCF8574_BL;
   end else begin
