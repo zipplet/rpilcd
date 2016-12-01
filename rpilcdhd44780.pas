@@ -93,8 +93,8 @@ type
   rHD44780InitParams = record
     lcdType: eHD44780LCDType;
     i2cDevice: trpiI2CDevice;
-    initialBacklightState: boolean;
-    initialDisplayOn: boolean;
+    backlightState: boolean;
+    displayOn: boolean;
     { Todo: Add flags for non I2C mode, such as pin mappings and 4/8 bit mode }
   end;
 
