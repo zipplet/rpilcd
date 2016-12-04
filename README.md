@@ -12,26 +12,27 @@ All of these are available on my Github account.
 
 ## Supported displays and the driver to use for them
 
-* HD44780 character LCDs
+* HD44780 character LCD with 8 user defineable characters
   * Driver:  __rpilcdhd44780__
-  * Supports displays behind a PCF8574 / PCF8574A I2C IO interface module
-  * Raw (directly connected) displays coming soon
-    * __Demo video:__ https://youtu.be/XQv7JDUyKzE
-    * If there is a jumper for the backlight, leave the jumper on the interface module and the driver can control the backlight via a built in transistor on the module.
-    * __20x4__ displays have been fully tested.
-    * __16x2__ displays have been fully tested.
-    * __40x2__ displays should work but __have not been tested__
+  * Demo video: https://youtu.be/XQv7JDUyKzE
+  * Supported connection methods:
+    * I2C bus (with the PCF8574(A) IO expander IC)
+    * __Raw (directly connected) displays coming soon, 4 and 8 bit mode__
+  * Display sub-types supported / tested:
+    * __20x4 5x8 dot__: Full support (tested)
+    * __16x2 5x8 dot__: Full support (tested)
+    * __40x2 5x8 dot__: Full support __(untested)__
     * The other 3 common sizes I know of (__8x1__, __16x1__ and __40x2__) I cannot get hold of so I cannot test or add support. Please contact me if you wish to donate a module, or add support and send me a pull request.
 
-* SSD1306 I2C OLED 128x64 display - __ALPHA / TESTING ONLY__
+* SSD1306 OLED display (monochrome)
   * Driver: __rpilcdi2cssd1306__
+  * Supported connection modes:
+    * I2C bus
+  * Display sub-types supported / tested:
+    * __128x64__: Under test
+  * __Strictly alpha/testing only, please do not use this yet!__
 
 ## Upcoming displays
-
-* HD44780 character LCDs connected directly to GPIO pins
-  * 4-bit and 8-bit mode will be supported.
-  * Driving the backlight via a transistor and PWM for brightness control will be supported.
-  * Supported display sizes will be the same as for the I2C based driver, until I obtain other module sizes.
 
 ## Directory layout example
 
@@ -39,4 +40,3 @@ All of these are available on my Github account.
 
 * /home/youruser/projects/my_awesome_program
 * /home/youruser/projects/libs/rpiio
-
