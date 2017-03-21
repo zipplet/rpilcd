@@ -480,13 +480,13 @@ begin
 
     { Give the display some time to latch. As mentioned earlier, this could be
       replaced with a much smaller time delay. }
-    sleep(1);
+    //sleep(1);
 
     { Unlatch the display }
     self.i2cDevice.writeByte(val);
 
     { Give the display time to process the data }
-    sleep(1);
+    //sleep(1);
   except
     on e: exception do begin
       raise exception.create(HD44780_EXCEPTION_ACCESS + ': ' + e.message);
